@@ -65,6 +65,7 @@ contract('TradingContract', (accounts) => {
                                                             );
         await Token1Instance.mint(accountOne ,'0x'+(10*oneEther).toString(16), { from: accountOne });
         await Token1Instance.mint(accountThree ,'0x'+(10*oneEther).toString(16), { from: accountOne });
+        await Token1Instance.mint(accountFourth ,'0x'+(10*oneEther).toString(16), { from: accountOne });
         
         //donate
         await Token1Instance.approve(TradingContractInstance.address,'0x'+(3*oneEther).toString(16), { from: accountOne });
@@ -75,6 +76,15 @@ contract('TradingContract', (accounts) => {
         //deposit for period 20 blocks
         await Token1Instance.approve(TradingContractInstance.address,'0x'+(10*oneEther).toString(16), { from: accountThree });
         await TradingContractInstance.depositToken1(20, { from: accountThree });
+        
+        await Token1Instance.approve(TradingContractInstance.address,'0x'+(5*oneEther).toString(16), { from: accountFourth });
+        await TradingContractInstance.depositToken1(20, { from: accountFourth });
+        
+        await Token1Instance.approve(TradingContractInstance.address,'0x'+(5*oneEther).toString(16), { from: accountFourth });
+        await truffleAssert.reverts(
+            TradingContractInstance.depositToken1(20, { from: accountFourth }),
+            "New deposit will be available after Block #39"
+        );
         
         // pass 30 block.   to voting period
         for (let i=0; i<30; i++) {

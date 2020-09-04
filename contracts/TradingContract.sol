@@ -57,8 +57,14 @@ contract TradingContract is Ownable, Rates {
 
     mapping(address => Deposit) private token2Deposits;
     
-    //////////////////
+    /**
+     * @param blockCount Duration in blocks
+     * if less than 0 - then it's Donation
+     * if equal 0 - then it's immediately exchange to another token
+     * if more than 0 - then it's Deposit for `blockCount` period 
+     */
     function depositToken1(int256 blockCount) validGasPrice public {
+        
         uint256 _allowedAmount = IERC20(token1).allowance(msg.sender, address(this));
         require(_allowedAmount>0, 'Amount exceeds allowed balance');
 
@@ -72,6 +78,12 @@ contract TradingContract is Ownable, Rates {
             _receivedToken1(msg.sender, _allowedAmount);
         } else if (blockCount > 0) {
             // Deposit
+            
+            if (token1Deposits[msg.sender].exists == true) {
+                require(token1Deposits[msg.sender].untilBlock < block.number, string(abi.encodePacked('New deposit will be available after Block #',uint2str(token1Deposits[msg.sender].untilBlock))));
+                require(token1Deposits[msg.sender].claimed == true, 'Previous deposit have not claimed yet');
+            }
+        
             token1Deposits[msg.sender] = 
                 Deposit({
                     amount:_allowedAmount,
@@ -82,6 +94,13 @@ contract TradingContract is Ownable, Rates {
                 });
         }
     }
+    
+    /**
+     * @param blockCount Duration in blocks
+     * if less than 0 - then it's Donation
+     * if equal 0 - then it's immediately exchange to another token
+     * if more than 0 - then it's Deposit for `blockCount` period 
+     */
     function depositToken2(int256 blockCount) payable validGasPrice public {
         uint256 _allowedAmount;
         bool success;
@@ -102,7 +121,12 @@ contract TradingContract is Ownable, Rates {
             _receivedToken2(msg.sender, _allowedAmount);
         } else if (blockCount > 0) {
             // Deposit
-
+            
+            if (token1Deposits[msg.sender].exists == true) {
+                require(token2Deposits[msg.sender].untilBlock < block.number, string(abi.encodePacked('New deposit will be available after Block #',uint2str(token2Deposits[msg.sender].untilBlock))));
+                require(token2Deposits[msg.sender].claimed == true, 'Previous deposit have not claimed yet');
+            }
+        
             token2Deposits[msg.sender] = 
                 Deposit({
                     amount:_allowedAmount,
@@ -114,12 +138,25 @@ contract TradingContract is Ownable, Rates {
         }
     }
     
+    /**
+     * @return Deposit info of Token1 
+     * array of (deposit's amount, untilBlock, claimed status) 
+     */
     function viewDepositsToken1() public view returns(uint256, uint256, bool){
         return (token1Deposits[msg.sender].amount,token1Deposits[msg.sender].untilBlock, token1Deposits[msg.sender].claimed);
     }
+    
+    /**
+     * @return Deposit info of Token2 
+     * array of (deposit's amount, untilBlock, claimed status) 
+     */
     function viewDepositsToken2() public view returns(uint256, uint256, bool){
         return (token2Deposits[msg.sender].amount,token2Deposits[msg.sender].untilBlock, token2Deposits[msg.sender].claimed);
     }
+    
+    /**
+     * Withdraw deposited tokens1
+     */
     function withdrawToken1() validGasPrice public {
         
         require(token1Deposits[msg.sender].exists == true, 'Deposit does not exist');
@@ -136,6 +173,10 @@ contract TradingContract is Ownable, Rates {
         require(success == true, 'Transfer tokens were failed'); 
         
     }
+    
+    /**
+     * Withdraw deposited tokens2
+     */
     function withdrawToken2() validGasPrice public {
         
         require(token2Deposits[msg.sender].exists == true, 'Deposit does not exist');
@@ -164,20 +205,23 @@ contract TradingContract is Ownable, Rates {
         }
     }
     
-    // function donateETH() public payable validGasPrice {
-    //     require (token2 == address(0), "This method is not supported");
-        
-    // }
     // recieve ether and transfer token1 to sender
     receive() external payable validGasPrice {
         require (token2 == address(0), "This method is not supported");
         _receivedToken2(msg.sender, msg.value);
     }
     
+    /**
+     * Calculated rate amount of deposits
+     * @param blockCount Duration in blocks
+     */
     function interest(uint256 blockCount) internal returns (uint256) {
         return interestRate;
     }
     
+    /**
+     * method ganerated random Int. will be used as ID for multiple deposits
+     */
     function rndID() internal returns (uint256) {
         return uint256(keccak256(abi.encodePacked(
             now, 
@@ -186,8 +230,9 @@ contract TradingContract is Ownable, Rates {
         )));    
     }
     
-    //////////////////////////////////////////////////////////////////////////////////////////////////
-    
+    /**
+     * 
+     */
     function _receive(uint256 msg_value) private {
         require (token2 == address(0), "This method is not supported"); 
         
@@ -204,9 +249,11 @@ contract TradingContract is Ownable, Rates {
             _amount2send
         );
         require(success == true, 'Transfer tokens were failed');
-        
     }
     
+    /**
+     * 
+     */
     function _receivedToken1(address _from, uint256 token1Amount) private {
         uint256 _balanceToken1 = IERC20(token1).balanceOf(address(this));
         uint256 _balanceToken2;
@@ -231,6 +278,10 @@ contract TradingContract is Ownable, Rates {
         }
             
     }
+    
+    /**
+     * 
+     */
     function _receivedToken2(address _from, uint256 token2Amount) private {
         
         uint256 _balanceToken1 = IERC20(token1).balanceOf(address(this));
