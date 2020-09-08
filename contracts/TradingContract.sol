@@ -266,7 +266,7 @@ contract TradingContract is Ownable, Rates {
         uint256 _amount2send = sellExchangeAmount(token1Amount, _balanceToken1, _balanceToken2);
         
         require ((_amount2send <= _balanceToken2 && _balanceToken2>0), "Amount exceeds available balance.");
-        
+
         bool success;
         if (address(0) == address(token2)) {
             address payable addr1 = payable(_from); // correct since Solidity >= 0.6.0

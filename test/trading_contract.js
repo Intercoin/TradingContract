@@ -103,45 +103,32 @@ contract('TradingContract', (accounts) => {
             );
     });
     
-    // it('should exchange', async () => {
-    //     const Token1Instance = await ERC20Mintable.new('t1','t1');
-    //     const TradingContractInstance = await TradingContract.new(
-    //                                                         Token1Instance.address, // address _token1,
-    //                                                         zeroAddress, // address _token2,
-    //                                                         1, //uint256 _numerator,
-    //                                                         1, //uint256 _denominator,
-    //                                                         0, //uint256 _priceFloor,
-    //                                                         1, //uint256 _discount
-    //                                                         );
-    //     // deposit 10 eth to contract 
-    //     const amountETHSendToContract = 10*10**18; // 10ETH
-    //     await TradingContractInstance.depositToken2(-1, { from: accountOne, to: TradingContractInstance.address, value: '0x'+(10*oneEther).toString(16) });
+    it('should exchange', async () => {
+        const Token1Instance = await ERC20Mintable.new('t1','t1');
+        const TradingContractInstance = await TradingContract.new(
+                                                            Token1Instance.address, // address _token1,
+                                                            zeroAddress, // address _token2,
+                                                            10, //uint256 _numerator,
+                                                            300, //uint256 _denominator,
+                                                            330, //uint256 _priceFloor,
+                                                            99e4, //uint256 _discount
+                                                            );
+        // make donate tokens by admin )
+        await Token1Instance.mint(TradingContractInstance.address ,'0x'+(10000*oneEther).toString(16), { from: accountOne });
+
+        const accountThreeStartingBalance = (await Token1Instance.balanceOf(accountThree));
+         // send 10 eth to contract 
+         const amountETHSendToContract = 10*10**18; // 10ETH
+         await TradingContractInstance.depositToken2(0, { from: accountThree, to: TradingContractInstance.address, value: '0x'+(10*oneEther).toString(16) });                                                        
+         
+        const accountThreeEndingBalance = (await Token1Instance.balanceOf(accountThree)); 
         
-    //     // mint 10 tokens
-    //     await Token1Instance.mint(accountTwo ,'0x'+(10*oneEther).toString(16), { from: accountOne });
-        
-    //     // approve to contract 
-    //     await Token1Instance.approve(TradingContractInstance.address,'0x'+(3*oneEther).toString(16), { from: accountTwo });
-        
-    //     const accountTwoStartingBalance = (await web3.eth.getBalance(accountTwo));
-    //     // and make deposit 
-    //     let depositTxObj = await TradingContractInstance.depositToken1(0, { from: accountTwo });
-    //     let depositTx = await web3.eth.getTransaction(depositTxObj.tx);
-        
-    //     const accountTwoEndingBalance = (await web3.eth.getBalance(accountTwo));
-    //     console.log(accountTwoStartingBalance);
-    //     console.log(accountTwoEndingBalance);
-    //     assert.equal(
-    //         (
-    //         new BN((3*oneEther).toString(16),16)
-    //         ).toString(16), 
-    //         (
-    //             (new BN(accountTwoEndingBalance,10)).sub(new BN(accountTwoStartingBalance,10)).add((new BN(depositTxObj["receipt"].gasUsed,10)).mul(new BN(depositTx.gasPrice,10)))
-    //         ).toString(16), 
-    //         "Wrong exchange value"
-    //     );
-        
-    // });
+        // approve to contract 
+        await Token1Instance.approve(TradingContractInstance.address,'0x'+(accountThreeEndingBalance).toString(16), { from: accountThree });     
+        // make exchange 
+        await TradingContractInstance.depositToken1(0, { from: accountThree });
+    });
     
+   
   
 });
