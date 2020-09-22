@@ -6,17 +6,19 @@ import "./openzeppelin-contracts/contracts/access/Ownable.sol";
 import "./openzeppelin-contracts/contracts/math/SafeMath.sol";
 import "./openzeppelin-contracts/contracts/utils/Address.sol";
 import "./Rates.sol";
+import "./Fee.sol";
 
-contract TradingContract is Ownable, Rates {
+contract TradingContract is Ownable, Rates, Fee  {
     
     using SafeMath for uint256;
     using Address for address;
     
+    
     uint256 public maxGasPrice = 1 * 10**18; // Adjustable value
-    uint256 public interestRate = 1002000; // 1.002 mul 1e6
-
+    
     address public token1;
     address public token2; // can be address(0) = 0x0000000000000000000000000000000000000000
+    
     
     modifier validGasPrice() {
         require(tx.gasprice <= maxGasPrice, "Transaction gas price cannot exceed maximum gas price.");
@@ -33,29 +35,38 @@ contract TradingContract is Ownable, Rates {
         maxGasPrice = gasPrice;
     }
     
+    /**
+     * @param _token1 address of token1
+     * @param _token2 address of token2(or address(0) for ETH)
+     * @param _numerator price increment *1e6
+     * @param _denominator how much ether to next price
+     * @param _priceFloor price floor *1e6
+     * @param _discount price 99% * 1e6
+     * @param _token1Fee // 1 means 0.000001% mul 1e6
+     * @param _token2Fee // 1 means 0.000001% mul 1e6
+     * @param _interestRate // 1002000 means 1.002% mul 1e6
+     */
     constructor(
         address _token1, 
         address _token2,
         uint256 _numerator,
         uint256 _denominator,
         uint256 _priceFloor,
-        uint256 _discount
-        ) Rates(_numerator,_denominator,_priceFloor,_discount) public payable 
+        uint256 _discount,
+        uint256 _token1Fee,
+        uint256 _token2Fee,
+        uint256 _interestRate
+    ) 
+        Rates(_numerator,_denominator,_priceFloor,_discount)
+        Fee(_token1, _token2, _token1Fee, _token2Fee, _interestRate) 
+        public 
+        payable 
     {
         token1 = _token1;
         token2 = _token2;
+        
     }
-    struct Deposit {
-        uint256 amount;
-        uint256 untilBlock;
-        uint256 blockCount;
-        bool claimed;
-        bool exists;
-    }
-
-    mapping(address => Deposit) private token1Deposits;
-
-    mapping(address => Deposit) private token2Deposits;
+    
     
     /**
      * @param blockCount Duration in blocks
@@ -79,19 +90,8 @@ contract TradingContract is Ownable, Rates {
         } else if (blockCount > 0) {
             // Deposit
             
-            if (token1Deposits[msg.sender].exists == true) {
-                require(token1Deposits[msg.sender].untilBlock < block.number, string(abi.encodePacked('New deposit will be available after Block #',uint2str(token1Deposits[msg.sender].untilBlock))));
-                require(token1Deposits[msg.sender].claimed == true, 'Previous deposit have not claimed yet');
-            }
-        
-            token1Deposits[msg.sender] = 
-                Deposit({
-                    amount:_allowedAmount,
-                    untilBlock:block.number.add(uint256(blockCount)),
-                    blockCount: uint256(blockCount),
-                    claimed:false,
-                    exists:true
-                });
+            setFunds(token1,_allowedAmount, uint256(blockCount));
+            
         }
     }
     
@@ -122,19 +122,8 @@ contract TradingContract is Ownable, Rates {
         } else if (blockCount > 0) {
             // Deposit
             
-            if (token1Deposits[msg.sender].exists == true) {
-                require(token2Deposits[msg.sender].untilBlock < block.number, string(abi.encodePacked('New deposit will be available after Block #',uint2str(token2Deposits[msg.sender].untilBlock))));
-                require(token2Deposits[msg.sender].claimed == true, 'Previous deposit have not claimed yet');
-            }
-        
-            token2Deposits[msg.sender] = 
-                Deposit({
-                    amount:_allowedAmount,
-                    untilBlock:block.number.add(uint256(blockCount)),
-                    blockCount: uint256(blockCount),
-                    claimed:false,
-                    exists:true
-                });
+            setFunds(token2,_allowedAmount, uint256(blockCount));
+
         }
     }
     
@@ -143,7 +132,7 @@ contract TradingContract is Ownable, Rates {
      * array of (deposit's amount, untilBlock, claimed status) 
      */
     function viewDepositsToken1() public view returns(uint256, uint256, bool){
-        return (token1Deposits[msg.sender].amount,token1Deposits[msg.sender].untilBlock, token1Deposits[msg.sender].claimed);
+        return viewFunds(token1);
     }
     
     /**
@@ -151,7 +140,7 @@ contract TradingContract is Ownable, Rates {
      * array of (deposit's amount, untilBlock, claimed status) 
      */
     function viewDepositsToken2() public view returns(uint256, uint256, bool){
-        return (token2Deposits[msg.sender].amount,token2Deposits[msg.sender].untilBlock, token2Deposits[msg.sender].claimed);
+        return viewFunds(token2);
     }
     
     /**
@@ -159,14 +148,9 @@ contract TradingContract is Ownable, Rates {
      */
     function withdrawToken1() validGasPrice public {
         
-        require(token1Deposits[msg.sender].exists == true, 'Deposit does not exist');
-        require(token1Deposits[msg.sender].claimed == false, 'Deposit have already claimed');
-        require(token1Deposits[msg.sender].untilBlock < block.number, string(abi.encodePacked('Withdraw will be available at Block #', uint2str(token1Deposits[msg.sender].untilBlock))));
         
-        token1Deposits[msg.sender].claimed = true;
+        uint256 _amount2send = withdrawFunds(token1);
         
-        
-        uint256 _amount2send = token1Deposits[msg.sender].amount.mul(interest(token1Deposits[msg.sender].blockCount)).div(1e6);
         uint256 _balanceToken1 = IERC20(token1).balanceOf(address(this));
         require (_amount2send <= _balanceToken1 && _balanceToken1>0, "Amount exceeds available balance.");
         bool success = IERC20(token1).transfer(msg.sender,_amount2send);
@@ -179,12 +163,6 @@ contract TradingContract is Ownable, Rates {
      */
     function withdrawToken2() validGasPrice public {
         
-        require(token2Deposits[msg.sender].exists == true, 'Deposit does not exist');
-        require(token2Deposits[msg.sender].claimed == false, 'Deposit have already claimed');
-        require(token2Deposits[msg.sender].untilBlock < block.number, string(abi.encodePacked('Withdraw will be available at Block #',uint2str(token2Deposits[msg.sender].untilBlock))));
-        
-        token2Deposits[msg.sender].claimed = true;
-        
         uint256 _balanceToken2;
         if (address(0) == address(token2)) {  // ETH
             _balanceToken2 = address(this).balance;
@@ -192,7 +170,8 @@ contract TradingContract is Ownable, Rates {
             _balanceToken2 = IERC20(token2).balanceOf(address(this));    
         }
         
-        uint256 _amount2send = token2Deposits[msg.sender].amount.mul(interest(token1Deposits[msg.sender].blockCount)).div(1e6);
+        uint256 _amount2send = withdrawFunds(token2);
+        
         require ((_amount2send <= _balanceToken2 && _balanceToken2>0), "Amount exceeds available balance.");
         bool success;
         if (address(0) == address(token2)) {
@@ -209,14 +188,6 @@ contract TradingContract is Ownable, Rates {
     receive() external payable validGasPrice {
         require (token2 == address(0), "This method is not supported");
         _receivedToken2(msg.sender, msg.value);
-    }
-    
-    /**
-     * Calculated rate amount of deposits
-     * @param blockCount Duration in blocks
-     */
-    function interest(uint256 blockCount) internal returns (uint256) {
-        return interestRate;
     }
     
     /**
@@ -300,24 +271,6 @@ contract TradingContract is Ownable, Rates {
         require(success == true, 'Transfer tokens were failed'); 
     }  
     
-    function uint2str(uint _i) internal pure returns (string memory _uintAsString) {
-        if (_i == 0) {
-            return "0";
-        }
-        uint j = _i;
-        uint len;
-        while (j != 0) {
-            len++;
-            j /= 10;
-        }
-        bytes memory bstr = new bytes(len);
-        uint k = len - 1;
-        while (_i != 0) {
-            bstr[k--] = byte(uint8(48 + _i % 10));
-            _i /= 10;
-        }
-        return string(bstr);
-    }
     
 }
 

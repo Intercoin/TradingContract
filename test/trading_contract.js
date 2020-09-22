@@ -36,7 +36,7 @@ contract('TradingContract', (accounts) => {
     // setup useful values
     const oneEther = 1000000000000000000; // 1eth
     const zeroAddress = "0x0000000000000000000000000000000000000000";
-    
+ 
     it('should donate', async () => {
         const Token1Instance = await ERC20Mintable.new('t1','t1');
         const TradingContractInstance = await TradingContract.new(
@@ -45,23 +45,29 @@ contract('TradingContract', (accounts) => {
                                                             1, //uint256 _numerator,
                                                             1, //uint256 _denominator,
                                                             0, //uint256 _priceFloor,
-                                                            1, //uint256 _discount
+                                                            1, //uint256 _discount,
+                                                            1, //fee1
+                                                            1, //fee2
+                                                            1002000 //interestRate
                                                             );
         await Token1Instance.mint(accountOne ,'0x'+(10*oneEther).toString(16), { from: accountOne });
         await Token1Instance.approve(TradingContractInstance.address,'0x'+(3*oneEther).toString(16), { from: accountOne });
         await TradingContractInstance.depositToken1(-1, { from: accountOne });
         
     });
-    
+ 
     it('should deposit and withdraw', async () => {
         const Token1Instance = await ERC20Mintable.new('t1','t1');
         const TradingContractInstance = await TradingContract.new(
                                                             Token1Instance.address, // address _token1,
                                                             zeroAddress, // address _token2,
                                                             1, //uint256 _numerator,
-                                                            1, //uint256 _denominator,
-                                                            0, //uint256 _priceFloor,
-                                                            1, //uint256 _discount
+                                                            10000, //uint256 _denominator,
+                                                            '0x'+(1*oneEther).toString(16), //uint256 _priceFloor,
+                                                            990000, //uint256 _discount
+                                                            1, //fee1
+                                                            1, //fee2
+                                                            1002000 //interestRate
                                                             );
         await Token1Instance.mint(accountOne ,'0x'+(10*oneEther).toString(16), { from: accountOne });
         await Token1Instance.mint(accountThree ,'0x'+(10*oneEther).toString(16), { from: accountOne });
@@ -90,28 +96,34 @@ contract('TradingContract', (accounts) => {
         for (let i=0; i<30; i++) {
             await helper.advanceBlock();
         }
-        
+
         await TradingContractInstance.withdrawToken1({ from: accountThree });
+
         const accountThreeEndingBalance = (await Token1Instance.balanceOf(accountThree));
         
+        let fee = 5*oneEther*0.000001;
         assert.equal(
             (
-                new BN((accountThreeStartingBalance*1.002).toString(16),16)
+                new BN((accountThreeStartingBalance*1.002+fee).toString(16),16)
             ).toString(16),
             (new BN((accountThreeEndingBalance).toString(16),16)).toString(16),
             "balance after withdraw not equal"
             );
+            
     });
-    
+    /*
     it('should exchange', async () => {
         const Token1Instance = await ERC20Mintable.new('t1','t1');
         const TradingContractInstance = await TradingContract.new(
                                                             Token1Instance.address, // address _token1,
                                                             zeroAddress, // address _token2,
-                                                            10, //uint256 _numerator,
-                                                            300, //uint256 _denominator,
-                                                            330, //uint256 _priceFloor,
-                                                            99e4, //uint256 _discount
+                                                            1, //uint256 _numerator,
+                                                            10000, //uint256 _denominator,
+                                                            '0x'+(1*oneEther).toString(16), //uint256 _priceFloor,
+                                                            990000, //uint256 _discount
+                                                            1, //fee1
+                                                            1, //fee2
+                                                            100200 //interestRate
                                                             );
         // make donate tokens by admin )
         await Token1Instance.mint(TradingContractInstance.address ,'0x'+(10000*oneEther).toString(16), { from: accountOne });
@@ -128,7 +140,7 @@ contract('TradingContract', (accounts) => {
         // make exchange 
         await TradingContractInstance.depositToken1(0, { from: accountThree });
     });
-    
+    */
    
   
 });

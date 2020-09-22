@@ -11,9 +11,12 @@ contract TradingContractMock is TradingContract {
         uint256 _numerator,
         uint256 _denominator,
         uint256 _priceFloor,
-        uint256 _discount
+        uint256 _discount,
+        uint256 _token1Fee,
+        uint256 _token2Fee,
+        uint256 _interestRate
     ) 
-        TradingContract(_token1, _token2, _numerator, _denominator, _priceFloor, _discount) 
+        TradingContract(_token1, _token2, _numerator, _denominator, _priceFloor, _discount, _token1Fee, _token2Fee, _interestRate) 
         public 
     {
 //        _discount = discount;

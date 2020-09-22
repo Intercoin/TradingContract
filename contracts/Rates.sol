@@ -68,12 +68,14 @@ contract Rates is CommonConstants {
         //amount2send = token2Amount.mul(DECIMALS).mul(1e6).div(buyExchangeRateAverage(token2Balance,token2Balance.add(token2Amount)));    
         
         // implement formula a+bY(t)+(b/2)*y
-        amount2send = _priceFloor.mul(DECIMALS)
-                        .add(
-                            token2Balance.mul(_numerator).div(_denominator)
-                        ).add(
-                            token2Amount.mul(_numerator).div(_denominator).div(2)
-                        );
+        amount2send = token2Amount.div(
+            _priceFloor.mul(DECIMALS)
+            .add(
+                token2Balance.mul(_numerator).div(_denominator)
+            ).add(
+                token2Amount.mul(_numerator).div(_denominator).div(2)
+            )
+        );
     }
     
     /**
@@ -115,14 +117,27 @@ contract Rates is CommonConstants {
         //amount2send = token1Amount.mul(sellExchangeRateAverage(token1Balance, token1Balance.add(token1Amount))).div(1e6).div(DECIMALS);
         
         // implement formula (2/b)*x-(2*a)/b-2*Y(t) ==> 2*x*denom/numerator - 2*a*denom/numerator-2*Y(t)
+        
         // `ret` can be less than 0. mean that sub from overall amount. so use trick (x>=0) ? x : -x
-        int256 ret = int256(((token1Amount).mul(2).mul(_denominator).div(_numerator)))
-                    .sub(int256(
-                        _priceFloor.mul(DECIMALS).mul(2).mul(_denominator).div(_numerator)
-                        ))
-                    .sub(int256(
-                        token2Balance.mul(2)
-                        ));
+        // int256 ret = int256(((token1Amount).mul(2).mul(_denominator).div(_numerator)))
+        //             .sub(int256(
+        //                 _priceFloor.mul(DECIMALS).mul(2).mul(_denominator).div(_numerator)
+        //                 ))
+        //             .sub(int256(
+        //                 token2Balance.mul(2)
+        //                 ));
+        // implement formula (a+b/Y(t)) / (1/x-b/2)
+        int256 ret =  int256(
+            (
+                _priceFloor.mul(DECIMALS).add(
+                    (_numerator.div(_denominator)).div(token2Balance)
+                )
+            ).div(
+                (uint256(1).div(token1Amount)).sub(_numerator.div(_denominator).div(2))
+            )
+        );  
+
+                        
         amount2send = (ret >= 0) ? uint256(ret) : uint256(-ret);
         // discount apply
         amount2send = amount2send.mul(_discount).div(1e6);
