@@ -1,3 +1,4 @@
+![#f03c15](https://via.placeholder.com/15/f03c15/000000?text=+) `README.MD is out of date. Contract is not fully works too.`
 # TradingContract
 A smart contract with the ability to trade one token against others, eliminating the need for centralized trust.
 # Deploy
@@ -10,6 +11,8 @@ _numerator|uint256| price increment
 _denominator|uint256| how much ether to next price
 _priceFloor|uint256| price floor
 _discount|uint256|  99% * 1e6 (used for calculate sellExchangeRate)
+_token1Fee|uint256| fee accural for all deposits when some1 withdraw
+_token2Fee|uint256| fee accural for all deposits when some1 withdraw
 
 # Methods
 once installed will be use methods to exchange

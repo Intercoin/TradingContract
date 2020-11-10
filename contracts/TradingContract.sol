@@ -44,7 +44,6 @@ contract TradingContract is Ownable, Rates, Fee  {
      * @param _discount price 99% * 1e6
      * @param _token1Fee // 1 means 0.000001% mul 1e6
      * @param _token2Fee // 1 means 0.000001% mul 1e6
-     * @param _interestRate // 1002000 means 1.002% mul 1e6
      */
     constructor(
         address _token1, 
@@ -54,11 +53,10 @@ contract TradingContract is Ownable, Rates, Fee  {
         uint256 _priceFloor,
         uint256 _discount,
         uint256 _token1Fee,
-        uint256 _token2Fee,
-        uint256 _interestRate
+        uint256 _token2Fee
     ) 
         Rates(_numerator,_denominator,_priceFloor,_discount)
-        Fee(_token1, _token2, _token1Fee, _token2Fee, _interestRate) 
+        Fee(_token1, _token2, _token1Fee, _token2Fee) 
         public 
         payable 
     {
@@ -69,12 +67,13 @@ contract TradingContract is Ownable, Rates, Fee  {
     
     
     /**
-     * @param blockCount Duration in blocks
+     * @param durationTime Duration in seconds
      * if less than 0 - then it's Donation
      * if equal 0 - then it's immediately exchange to another token
-     * if more than 0 - then it's Deposit for `blockCount` period 
+     * if more than 0 - then it's Deposit for `durationTime` period 
+     * @param directToAccount if true then funds from deposit will send to account directly else accumulated in contract
      */
-    function depositToken1(int256 blockCount) validGasPrice public {
+    function depositToken1(int256 durationTime, bool directToAccount) validGasPrice public {
         
         uint256 _allowedAmount = IERC20(token1).allowance(msg.sender, address(this));
         require(_allowedAmount>0, 'Amount exceeds allowed balance');
@@ -83,25 +82,26 @@ contract TradingContract is Ownable, Rates, Fee  {
         bool success = IERC20(token1).transferFrom(msg.sender, address(this), _allowedAmount);
         require(success == true, 'Transfer tokens were failed');
         
-        if (blockCount < 0) {
+        if (durationTime < 0) {
             // Donation
-        } else if (blockCount == 0) {
+        } else if (durationTime == 0) {
             _receivedToken1(msg.sender, _allowedAmount);
-        } else if (blockCount > 0) {
+        } else if (durationTime > 0) {
             // Deposit
             
-            setFunds(token1,_allowedAmount, uint256(blockCount));
+            setFunds(token1,_allowedAmount, uint256(durationTime), directToAccount);
             
         }
     }
     
     /**
-     * @param blockCount Duration in blocks
+     * @param durationTime Duration in blocks
      * if less than 0 - then it's Donation
      * if equal 0 - then it's immediately exchange to another token
-     * if more than 0 - then it's Deposit for `blockCount` period 
+     * if more than 0 - then it's Deposit for `durationTime` period 
+     * @param directToAccount if true when funds from deposit 
      */
-    function depositToken2(int256 blockCount) payable validGasPrice public {
+    function depositToken2(int256 durationTime, bool directToAccount) payable validGasPrice public {
         uint256 _allowedAmount;
         bool success;
         if (token2 == address(0)) {
@@ -115,90 +115,121 @@ contract TradingContract is Ownable, Rates, Fee  {
             require(success == true, 'Transfer tokens were failed');     
         }
         
-        if (blockCount < 0) {
+        if (durationTime < 0) {
             // Donation
-        } else if (blockCount == 0) {
+        } else if (durationTime == 0) {
             _receivedToken2(msg.sender, _allowedAmount);
-        } else if (blockCount > 0) {
+        } else if (durationTime > 0) {
             // Deposit
             
-            setFunds(token2,_allowedAmount, uint256(blockCount));
+            setFunds(token2,_allowedAmount, uint256(durationTime), directToAccount);
 
         }
     }
     
     /**
-     * @return Deposit info of Token1 
-     * array of (deposit's amount, untilBlock, claimed status) 
+     * @return depositIDs
+     * @return amounts
+     * @return untilTime
+     * @return directToAccounts
+     *  
      */
-    function viewDepositsToken1() public view returns(uint256, uint256, bool){
+    function viewDepositsToken1 
+    (
+    ) 
+        public 
+        view 
+    returns(
+        uint256[] memory depositIDs, 
+        uint256[] memory amounts, 
+        uint256[] memory untilTime, 
+        bool[] memory directToAccounts
+    ){
+        // Deposit[] memory
         return viewFunds(token1);
     }
-    
+
     /**
-     * @return Deposit info of Token2 
-     * array of (deposit's amount, untilBlock, claimed status) 
+     * @return depositIDs
+     * @return amounts
+     * @return untilTime
+     * @return directToAccounts
+     *  
      */
-    function viewDepositsToken2() public view returns(uint256, uint256, bool){
+    function viewDepositsToken2
+    (
+    ) 
+        public 
+        view 
+    returns(
+        uint256[] memory depositIDs, 
+        uint256[] memory amounts, 
+        uint256[] memory untilTime, 
+        bool[] memory directToAccounts
+    ){
         return viewFunds(token2);
     }
     
     /**
      * Withdraw deposited tokens1
      */
-    function withdrawToken1() validGasPrice public {
+    function withdrawToken1(bool withYield, uint256 depositID) validGasPrice public {
         
+        uint256 balanceToken1;
         
-        uint256 _amount2send = withdrawFunds(token1);
+        balanceToken1 = IERC20(token1).balanceOf(address(this));
         
-        uint256 _balanceToken1 = IERC20(token1).balanceOf(address(this));
-        require (_amount2send <= _balanceToken1 && _balanceToken1>0, "Amount exceeds available balance.");
-        bool success = IERC20(token1).transfer(msg.sender,_amount2send);
-        require(success == true, 'Transfer tokens were failed'); 
+        uint256 tokensLeft = withdrawFunds(depositID, withYield, token1, balanceToken1);
+        
+        if (tokensLeft > 0) {
+            // balanceToken1 = IERC20(token1).balanceOf(address(this));
+            uint256 balanceToken2;
+            if (address(0) == address(token2)) {  // ETH
+                balanceToken2 = address(this).balance;
+            } else { // Token2
+                balanceToken2 = IERC20(token2).balanceOf(address(this));    
+            }
+          
+            //                                      (token1Amount, _balanceToken1, _balanceToken2);
+            uint256 amount2send = sellExchangeAmount(tokensLeft, balanceToken1, balanceToken2);
+            
+            require ((amount2send <= balanceToken2 && balanceToken2 > 0), "Amount exceeds available balance.");
+            withdrawLeftFunds(token2, withYield, balanceToken2, amount2send);
+        }
         
     }
     
     /**
      * Withdraw deposited tokens2
      */
-    function withdrawToken2() validGasPrice public {
+    function withdrawToken2(bool withYield, uint256 depositID) validGasPrice public {
         
-        uint256 _balanceToken2;
+        uint256 balanceToken2;
         if (address(0) == address(token2)) {  // ETH
-            _balanceToken2 = address(this).balance;
+            balanceToken2 = address(this).balance;
         } else { // Token2
-            _balanceToken2 = IERC20(token2).balanceOf(address(this));    
+            balanceToken2 = IERC20(token2).balanceOf(address(this));    
         }
         
-        uint256 _amount2send = withdrawFunds(token2);
+        uint256 tokensLeft = withdrawFunds(depositID, withYield, token2, balanceToken2);
         
-        require ((_amount2send <= _balanceToken2 && _balanceToken2>0), "Amount exceeds available balance.");
-        bool success;
-        if (address(0) == address(token2)) {
-            address payable addr1 = payable(msg.sender); // correct since Solidity >= 0.6.0
-            success = addr1.send(_amount2send);
-            require(success == true, 'Transfer ether was failed'); 
-        } else {
-            success = IERC20(token2).transfer(msg.sender,_amount2send);
-            require(success == true, 'Transfer tokens were failed');     
+        if (tokensLeft > 0) {
+            uint256 balanceToken1 = IERC20(token1).balanceOf(address(this));
+
+
+            //                                      (token2Amount, balanceToken1, balanceToken2);
+            uint256 amount2send = buyExchangeAmount(tokensLeft, balanceToken1, balanceToken2);
+            
+            require ((amount2send <= balanceToken1 && balanceToken1 > 0), "Amount exceeds available balance.");
+            withdrawLeftFunds(token1, withYield, balanceToken1, amount2send);
         }
+        
     }
     
     // recieve ether and transfer token1 to sender
     receive() external payable validGasPrice {
         require (token2 == address(0), "This method is not supported");
         _receivedToken2(msg.sender, msg.value);
-    }
-    
-    /**
-     * method ganerated random Int. will be used as ID for multiple deposits
-     */
-    function rndID() internal returns (uint256) {
-        return uint256(keccak256(abi.encodePacked(
-            now, 
-            block.difficulty, 
-            msg.sender
-        )));    
     }
     
     /**

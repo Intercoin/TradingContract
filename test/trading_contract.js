@@ -47,16 +47,15 @@ contract('TradingContract', (accounts) => {
                                                             0, //uint256 _priceFloor,
                                                             1, //uint256 _discount,
                                                             1, //fee1
-                                                            1, //fee2
-                                                            1002000 //interestRate
+                                                            1 //fee2
                                                             );
         await Token1Instance.mint(accountOne ,'0x'+(10*oneEther).toString(16), { from: accountOne });
         await Token1Instance.approve(TradingContractInstance.address,'0x'+(3*oneEther).toString(16), { from: accountOne });
-        await TradingContractInstance.depositToken1(-1, { from: accountOne });
+        await TradingContractInstance.depositToken1(-1, false, { from: accountOne });
         
     });
  
-    it('should deposit and withdraw', async () => {
+    it('should deposit and withdraw. accrual fee test', async () => {
         const Token1Instance = await ERC20Mintable.new('t1','t1');
         const TradingContractInstance = await TradingContract.new(
                                                             Token1Instance.address, // address _token1,
@@ -66,51 +65,100 @@ contract('TradingContract', (accounts) => {
                                                             '0x'+(1*oneEther).toString(16), //uint256 _priceFloor,
                                                             990000, //uint256 _discount
                                                             1, //fee1
-                                                            1, //fee2
-                                                            1002000 //interestRate
+                                                            1 //fee2
                                                             );
         await Token1Instance.mint(accountOne ,'0x'+(10*oneEther).toString(16), { from: accountOne });
         await Token1Instance.mint(accountThree ,'0x'+(10*oneEther).toString(16), { from: accountOne });
         await Token1Instance.mint(accountFourth ,'0x'+(10*oneEther).toString(16), { from: accountOne });
-        
+     
         //donate
         await Token1Instance.approve(TradingContractInstance.address,'0x'+(3*oneEther).toString(16), { from: accountOne });
-        await TradingContractInstance.depositToken1(-1, { from: accountOne });
-        
+        await TradingContractInstance.depositToken1(-1, false, { from: accountOne });
+  
         const accountThreeStartingBalance = (await Token1Instance.balanceOf(accountThree));
+        const accountFourthStartingBalance = (await Token1Instance.balanceOf(accountFourth));
         
-        //deposit for period 20 blocks
+        //deposit for period 20 blocks, DirectToAccount = false
         await Token1Instance.approve(TradingContractInstance.address,'0x'+(10*oneEther).toString(16), { from: accountThree });
-        await TradingContractInstance.depositToken1(20, { from: accountThree });
-        
+        await TradingContractInstance.depositToken1(20, false, { from: accountThree });
+  
+        //deposit for period 20 blocks, DirectToAccount = true
         await Token1Instance.approve(TradingContractInstance.address,'0x'+(5*oneEther).toString(16), { from: accountFourth });
-        await TradingContractInstance.depositToken1(20, { from: accountFourth });
+        await TradingContractInstance.depositToken1(20, true, { from: accountFourth });
+  
+        // await Token1Instance.approve(TradingContractInstance.address,'0x'+(5*oneEther).toString(16), { from: accountFourth });
+        // await truffleAssert.reverts(
+        //     TradingContractInstance.depositToken1(20, false, { from: accountFourth }),
+        //     "New deposit will be available after Block #39"
+        // );
         
-        await Token1Instance.approve(TradingContractInstance.address,'0x'+(5*oneEther).toString(16), { from: accountFourth });
-        await truffleAssert.reverts(
-            TradingContractInstance.depositToken1(20, { from: accountFourth }),
-            "New deposit will be available after Block #39"
-        );
+        // pass 30 seconds.   to voting period
         
-        // pass 30 block.   to voting period
-        for (let i=0; i<30; i++) {
-            await helper.advanceBlock();
-        }
+        await helper.advanceTime(30);
+        
+        var depositId;
+        
+        await TradingContractInstance.getPastEvents('DepositCreated', {
+            filter: {addr: accountThree}, // Using an array in param means OR: e.g. 20 or 23
+            fromBlock: 0,
+            toBlock: 'latest'
+        }, function(error, events){ /* console.log(events);*/ })
+        .then(function(events){
+            depositId = events[0].returnValues['depositID'];
+        });
+        
+        const accountFourthEndingBalanceWithoutFee = (await Token1Instance.balanceOf(accountFourth));
 
-        await TradingContractInstance.withdrawToken1({ from: accountThree });
+        await TradingContractInstance.withdrawToken1(true, depositId, { from: accountThree });
 
         const accountThreeEndingBalance = (await Token1Instance.balanceOf(accountThree));
+        const accountFourthEndingBalance = (await Token1Instance.balanceOf(accountFourth));
         
-        let fee = 5*oneEther*0.000001;
+        let feeForWithdraw = 10*oneEther*0.000001;
+        
         assert.equal(
             (
-                new BN((accountThreeStartingBalance*1.002+fee).toString(16),16)
+                new BN((parseInt(accountThreeStartingBalance-feeForWithdraw)).toString(16),16)
             ).toString(16),
-            (new BN((accountThreeEndingBalance).toString(16),16)).toString(16),
+            (
+                new BN((parseInt(accountThreeEndingBalance)).toString(16),16)
+            ).toString(16),
             "balance after withdraw not equal"
             );
             
+            //let feeForOtherPeopleDeposits = 10*oneEther*0.000001*5/18;
+            
+ 
+        let feeForOtherPeopleDeposits = 
+            new BN((10*oneEther).toString(16), 16).
+            mul(new BN(1, 10)).
+            div(new BN(1000000, 10)).
+            mul(new BN(5, 10)). // deposit recipient
+            div(new BN(5, 10)); // total deposit without sender
+
+        assert.equal(
+            (
+                new BN((accountFourthEndingBalance).toString(16),16)
+            ).toString(16),
+            (
+                
+                new BN(((new BN((accountFourthEndingBalanceWithoutFee).toString(16),16)).add(new BN(feeForOtherPeopleDeposits, 10))).toString(16),16)
+            ).toString(16),
+            "wrong Fee accrual"
+            );
+
     });
+    
+    /*
+    myContract.getPastEvents('MyEvent', {
+    filter: {myIndexedParam: [20,23], myOtherIndexedParam: '0x123456789...'}, // Using an array means OR: e.g. 20 or 23
+    fromBlock: 0,
+    toBlock: 'latest'
+}, function(error, events){ console.log(events); })
+.then(function(events){
+    console.log(events) // same results as the optional callback above
+});
+    */
     /*
     it('should exchange', async () => {
         const Token1Instance = await ERC20Mintable.new('t1','t1');

@@ -1,2 +1,6 @@
 /build
 /node_modules
+/contracts/artifacts
+/test/artifacts
+/contracts/mocks/artifacts
+/contracts/Test.sol
